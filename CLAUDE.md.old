@@ -1,0 +1,68 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+This project uses [uv](https://github.com/astral-sh/uv) for dependency and environment management.
+
+```bash
+# Install dependencies
+uv sync
+
+# Add a new dependency
+uv add <package>
+
+# Run a script
+uv run test.py
+
+# Run a specific Python file
+uv run python -m pytest  # if tests are added later
+```
+
+The package is installed in editable mode from `src/`, so changes to source files are reflected immediately without reinstalling.
+
+## Environment Setup
+
+Copy the required env vars into a `.env` file at the project root. `test.py` loads it via `python-dotenv`:
+
+```
+API_KEY=<your-openai-compatible-api-key>
+BASE_URL=<api-base-url>       # defaults to localhost:11434
+MODEL_NAME=<model-name>       # defaults to gpt-oss:120b-cloud
+```
+
+## Architecture
+
+The library extracts knowledge graphs from text using LLMs. The pipeline is:
+
+```
+Document → Prompt (schema-driven) → LLM → JSON repair → Parse/clean → Format → Filter → GraphDocument
+```
+
+**Source layout:** `src/LLMGraphTransformer/`
+
+### Layer breakdown
+
+| File | Role |
+|---|---|
+| `schema.py` | Data models — `NodeSchema`, `RelationshipSchema` (plain classes for user input); `Node`, `Relationship`, `GraphDocument` (Pydantic, for output) |
+| `prompt_generation.py` | Builds a `ChatPromptTemplate` from the user's schemas, encoding allowed node types, relationships, properties, and any `additional_instructions` |
+| `main.py` | Orchestrates the full pipeline: LLM invocation, JSON repair via `json_repair`, property cleanup, ID/type formatting, and strict-mode filtering |
+| `__init__.py` | Re-exports `LLMGraphTransformer` from `main.py` |
+
+### Key behaviors in `main.py`
+
+- **`process_properties(props)`**: Sanitizes LLM output — drops empty lists, unwraps single-element lists to scalars, logs a warning if `props` is not a dict.
+- **`_parse_and_clean_json(parsed_json)`**: Builds `Node` and `Relationship` objects from raw JSON; uses a `node_map` keyed by node ID to resolve relationship endpoints.
+- **`_format_graph()`**: Normalizes output — node IDs and types are title-cased, relationship types are uppercased with spaces converted to underscores.
+- **`graph_strict_mode_filtering()`**: Post-LLM filter that drops nodes/relationships not matching the declared schemas (case-insensitive). Active when `strict_mode=True` (the default).
+- **`convert_to_graph_document(document)`**: Single-document entry point. `convert_to_graph_documents(documents)` is the batch wrapper.
+
+### Schema-driven prompting
+
+`prompt_generation.py` dynamically renders the allowed schemas into the system prompt so the LLM knows exactly which node types, relationship types, and properties are valid. Passing `additional_instructions` appends extra rules verbatim to the prompt.
+
+### LLM compatibility
+
+The library is LangChain-native and accepts any `BaseLanguageModel`. The canonical integration is `ChatOpenAI` pointed at an OpenAI-compatible endpoint, but any chat model that can return JSON works.

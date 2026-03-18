@@ -1,11 +1,11 @@
 from LLMGraphTransformer import LLMGraphTransformer
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain_core.documents import Document
 from LLMGraphTransformer.schema import NodeSchema, RelationshipSchema
 
 from dotenv import load_dotenv
 import os
-load_dotenv(".env")  
+load_dotenv(".env")
 
 # Define the allowed node schemas
 node_schemas = [
@@ -33,11 +33,10 @@ Her husband, Pierre Curie, was a co-winner of her first Nobel Prize, making them
 She was, in 1906, the first woman to become a professor at the University of Paris."""
 
 api_key = os.getenv("API_KEY")
-base_url = os.getenv("BASE_URL")
-model_name = os.getenv("MODEL_NAME")
+base_url = os.getenv("BASE_URL","localhost:11434")
+model_name = os.getenv("MODEL_NAME","gpt-oss:120b-cloud")
 
-llm = ChatOpenAI(
-    api_key=api_key,
+llm = ChatOllama(
     base_url=base_url,
     model=model_name,
     temperature=0,

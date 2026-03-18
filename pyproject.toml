@@ -11,9 +11,16 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["LLM", "graph transformation", "machine learning", "document processing", "natural language processing","text to graph","document to graph"]
 dependencies = [
+    "fastapi>=0.135.1",
     "json-repair",
+    "langchain>=1.2.12",
+    "langchain-community>=0.4.1",
+    "langchain-ollama>=1.0.1",
+    "langchain-openai>=1.1.11",
     "langchain_core",
-    "pydantic"
+    "pydantic",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.42.0",
 ]
 
 [project.urls]
