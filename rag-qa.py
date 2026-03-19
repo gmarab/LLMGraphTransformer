@@ -77,12 +77,20 @@ prompt = ChatPromptTemplate.from_template(
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-qa_chain = (
-    {"context": retriever | format_docs, "question": RunnablePassthrough()}
-    | prompt
-    | llm
-    | StrOutputParser()
-)
+def format_references(docs):
+    """Estrai riferimenti univoci (documento, pagina) dai documenti recuperati."""
+    seen = set()
+    refs = []
+    for doc in docs:
+        source = doc.metadata.get("source", doc.metadata.get("fileName", "Sconosciuto"))
+        page = doc.metadata.get("page", doc.metadata.get("page_number", "N/A"))
+        key = (source, page)
+        if key not in seen:
+            seen.add(key)
+            refs.append(f"- {source}, pag. {page}")
+    return "\n".join(refs)
+
+answer_chain = prompt | llm | StrOutputParser()
 
 # --- Endpoint ---
 
@@ -96,7 +104,12 @@ async def chat_completions(request: ChatCompletionRequest):
     question = user_messages[-1].content
 
     try:
-        answer = qa_chain.invoke(question)
+        docs = retriever.invoke(question)
+        context = format_docs(docs)
+        answer = answer_chain.invoke({"context": context, "question": question})
+        references = format_references(docs)
+        if references:
+            answer = f"{answer}\n\nFonti:\n{references}"
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
