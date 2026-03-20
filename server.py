@@ -10,12 +10,13 @@ from rag_load import upload_file, upload_folder, upload_path, clean_project
 
 load_dotenv(".env")
 
-parser = argparse.ArgumentParser(description="RAG Q&A Service")
-parser.add_argument("--project", default="novapulse", help="Nome del progetto (determina label e indici in Neo4j)")
-args = parser.parse_args()
-project = args.project
+#parser = argparse.ArgumentParser(description="RAG Q&A Service")
+#parser.add_argument("--project", default="novapulse", help="Nome del progetto (determina label e indici in Neo4j)")
+#args = parser.parse_args()
+#project = args.project
 
-app = FastAPI(title=f"RAG Q&A Service - {project}")
+#app = FastAPI(title=f"RAG Q&A Service - {project}")
+app = FastAPI(title=f"RAG Q&A Service")
 
 # --- OpenAI-compatible request/response models ---
 
@@ -28,7 +29,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float = 0.0
     max_tokens: int | None = None
     strip_markdown: bool = True
-    project: str | None = None
+    project: str
 
 class Source(BaseModel):
     nome_documento: str
@@ -62,7 +63,7 @@ async def chat_completions(request: ChatCompletionRequest):
         raise HTTPException(status_code=400, detail="Nessun messaggio 'user' nella richiesta")
 
     question = user_messages[-1].content
-    req_project = request.project or project
+    req_project = request.project
 
     try:
         answer, sources = query_answer(question, req_project, request.strip_markdown)
