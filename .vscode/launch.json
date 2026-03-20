@@ -6,10 +6,22 @@
     "configurations": [
 
         {
-            "name": "Python Debugger: Current File",
+            "name": "Load documents",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "program": "rag-load.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--folder",
+                "/home/g22/documents/Company",
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "server.py",
             "console": "integratedTerminal",
             "justMyCode": false
         }

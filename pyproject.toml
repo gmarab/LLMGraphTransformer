@@ -20,6 +20,7 @@ dependencies = [
     "langchain_core",
     "pydantic",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.22",
     "uvicorn>=0.42.0",
 ]
 
