@@ -9,11 +9,11 @@
             "name": "Load documents",
             "type": "debugpy",
             "request": "launch",
-            "program": "rag-load.py",
+            "program": "rag_load.py",
             "console": "integratedTerminal",
             "args": [
-                "--folder",
-                "/home/g22/EvalRAG/documents/Company",
+                "--folder", "../EvalRAG/documents/Company",
+                "--project", "Company"
             ],
             "justMyCode": false
         },

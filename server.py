@@ -5,17 +5,12 @@ import time
 import uuid
 import argparse
 
-from rag_qa import query_answer
+#from rag_qa import query_answer
+from agent_qa import query_answer
 from rag_load import upload_file, upload_folder, upload_path, clean_project
 
 load_dotenv(".env")
 
-#parser = argparse.ArgumentParser(description="RAG Q&A Service")
-#parser.add_argument("--project", default="novapulse", help="Nome del progetto (determina label e indici in Neo4j)")
-#args = parser.parse_args()
-#project = args.project
-
-#app = FastAPI(title=f"RAG Q&A Service - {project}")
 app = FastAPI(title=f"RAG Q&A Service")
 
 # --- OpenAI-compatible request/response models ---

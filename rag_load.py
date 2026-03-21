@@ -1,3 +1,4 @@
+import argparse
 import pypdf
 import docx
 import tiktoken
@@ -204,3 +205,29 @@ def upload_folder(folder: str, project: str, clean: bool = False) -> dict:
         "errors": errors if errors else None,
         "cleaned": deleted if clean else None,
     }
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="RAG Evaluation with RAGAS")
+    parser.add_argument(
+        "--folder",
+        help=f"Path to folder to load",
+        required=True
+    )
+    parser.add_argument(
+        "--project",
+        help=f"Project name for Neo4j",
+        required=True
+    )
+    parser.add_argument(
+        "--clean",
+        default=True,
+        help=f"Clean previous project's documents",
+    )
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    upload_folder(args.folder, args.project, args.clean)
+
+if __name__ == "__main__":
+    main()
