@@ -120,7 +120,7 @@ class UploadPathRequest(BaseModel):
 
 @app.post("/v1/upload/path")
 async def upload_path_endpoint(request: UploadPathRequest):
-    req_project = request.project or project
+    req_project = request.project
 
     try:
         result = upload_path(request.path, req_project, request.clean)
@@ -140,7 +140,7 @@ class UploadFolderRequest(BaseModel):
 
 @app.post("/v1/upload/folder")
 async def upload_folder_endpoint(request: UploadFolderRequest):
-    req_project = request.project or project
+    req_project = request.project
 
     try:
         result = upload_folder(request.folder, req_project, request.clean)

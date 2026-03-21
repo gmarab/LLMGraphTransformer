@@ -13,7 +13,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--folder",
-                "/home/g22/documents/Company",
+                "/home/g22/EvalRAG/documents/Company",
             ],
             "justMyCode": false
         },

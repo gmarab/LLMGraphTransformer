@@ -1,5 +1,6 @@
 from langchain_ollama import OllamaEmbeddings, OllamaLLM
 from langchain_neo4j import Neo4jVector
+from neo4j_graphrag.types import SearchType
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
@@ -32,7 +33,7 @@ def get_vector_store(proj: str) -> Neo4jVector:
         index_name=f"{proj}_docs",
         node_label=f"Document_{proj}",
         keyword_index_name=f"{proj}_docs_fulltext",
-        search_type="hybrid",
+        search_type=SearchType.HYBRID
     )
 
 llm = OllamaLLM(
