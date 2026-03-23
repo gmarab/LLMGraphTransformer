@@ -7,7 +7,8 @@ import argparse
 
 #from rag_qa import query_answer
 from agent_qa import query_answer
-from rag_load import upload_file, upload_folder, upload_path, clean_project
+#from rag_load import upload_file, upload_folder, upload_path, clean_project
+from agent_load import upload_file, upload_folder, upload_path, clean_project
 
 load_dotenv(".env")
 
@@ -58,10 +59,9 @@ async def chat_completions(request: ChatCompletionRequest):
         raise HTTPException(status_code=400, detail="Nessun messaggio 'user' nella richiesta")
 
     question = user_messages[-1].content
-    req_project = request.project
 
     try:
-        answer, sources = query_answer(question, req_project, request.strip_markdown)
+        answer, sources = query_answer(question, request.project, request.strip_markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -109,16 +109,14 @@ async def upload_document(
 
 class UploadPathRequest(BaseModel):
     path: str
-    project: str | None = None
-    clean: bool = False
+    project: str
+    clean: bool = True
 
 
 @app.post("/v1/upload/path")
 async def upload_path_endpoint(request: UploadPathRequest):
-    req_project = request.project
-
     try:
-        result = upload_path(request.path, req_project, request.clean)
+        result = upload_path(request.path, request.project, request.clean)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -129,16 +127,14 @@ async def upload_path_endpoint(request: UploadPathRequest):
 
 class UploadFolderRequest(BaseModel):
     folder: str
-    project: str | None = None
-    clean: bool = False
+    project: str
+    clean: bool = True
 
 
 @app.post("/v1/upload/folder")
 async def upload_folder_endpoint(request: UploadFolderRequest):
-    req_project = request.project
-
     try:
-        result = upload_folder(request.folder, req_project, request.clean)
+        result = upload_folder(request.folder, request.project, request.clean)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -148,15 +144,13 @@ async def upload_folder_endpoint(request: UploadFolderRequest):
 
 
 class CleanProjectRequest(BaseModel):
-    project: str | None = None
+    project: str
 
 
 @app.post("/v1/clean")
 async def clean_project_endpoint(request: CleanProjectRequest):
-    req_project = request.project or project
-
     try:
-        result = clean_project(req_project)
+        result = clean_project(request.project)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
