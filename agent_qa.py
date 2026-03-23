@@ -31,20 +31,37 @@ llm = OllamaLLM(
 )
 
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
+RETRIEVE_K = int(os.getenv("RETRIEVE_K", "3"))
 
-prompt = ChatPromptTemplate.from_template(
+decompose_prompt = ChatPromptTemplate.from_template(
+    "You are a question analyzer. Your job is to break down complex, multi-part questions "
+    "into simple, independent sub-questions that can each be answered with a single retrieval.\n\n"
+    "Rules:\n"
+    "- If the question is already simple and focuses on a single topic, return it unchanged.\n"
+    "- If the question contains multiple distinct parts (joined by 'and', 'or', commas, etc.), "
+    "split them into separate sub-questions.\n"
+    "- Each sub-question must be self-contained and understandable on its own.\n"
+    "- Return ONLY the sub-questions, one per line, with no numbering, bullets, or extra text.\n\n"
+    "Question: {question}\n\n"
+    "Sub-questions:"
+)
+
+answer_prompt = ChatPromptTemplate.from_template(
     "You are a helpful assistant that answers questions based strictly on the provided context.\n\n"
     "Rules:\n"
     "- Answer ONLY using information found in the context below.\n"
-    "- If the context does not contain enough information to answer, say \"I don't have enough information to answer this question.\"\n"
+    "- If the context does not contain enough information to answer, say "
+    "\"I don't have enough information to answer this question.\"\n"
     "- Do not make up or infer information beyond what is explicitly stated.\n"
+    "- When the question has multiple parts, address each part clearly.\n"
     "- Be concise and direct.\n\n"
     "Context:\n{context}\n\n"
     "Question: {question}\n\n"
     "Answer:"
 )
 
-answer_chain = prompt | llm | StrOutputParser()
+decompose_chain = decompose_prompt | llm | StrOutputParser()
+answer_chain = answer_prompt | llm | StrOutputParser()
 
 
 @lru_cache(maxsize=16)
@@ -67,6 +84,7 @@ class RAGState(TypedDict):
     question: str
     project: str
     strip_markdown: bool
+    sub_questions: list[str]
     docs_with_scores: list[tuple[Any, float]]
     context: str
     answer: str
@@ -75,15 +93,31 @@ class RAGState(TypedDict):
 
 # --- Nodes ---
 
+def decompose(state: RAGState) -> dict:
+    """Scompone domande multi-hop in sotto-domande indipendenti."""
+    raw = decompose_chain.invoke({"question": state["question"]})
+    sub_qs = [q.strip() for q in raw.strip().splitlines() if q.strip()]
+    if not sub_qs:
+        sub_qs = [state["question"]]
+    return {"sub_questions": sub_qs}
+
+
 def retrieve(state: RAGState) -> dict:
-    """Recupera documenti dal vector store e filtra per soglia di similarità."""
+    """Recupera documenti per ogni sotto-domanda e deduplica i risultati."""
     vs = get_vector_store(state["project"])
-    docs_with_scores = vs.similarity_search_with_relevance_scores(state["question"], k=3)
-    docs_with_scores = [
-        (doc, score) for doc, score in docs_with_scores if score >= SIMILARITY_THRESHOLD
-    ]
-    context = "\n\n".join(doc.page_content for doc, _score in docs_with_scores)
-    return {"docs_with_scores": docs_with_scores, "context": context}
+    seen_contents: set[str] = set()
+    all_docs: list[tuple[Any, float]] = []
+
+    for sub_q in state["sub_questions"]:
+        results = vs.similarity_search_with_relevance_scores(sub_q, k=RETRIEVE_K)
+        for doc, score in results:
+            if score >= SIMILARITY_THRESHOLD and doc.page_content not in seen_contents:
+                seen_contents.add(doc.page_content)
+                all_docs.append((doc, score))
+
+    all_docs.sort(key=lambda x: x[1], reverse=True)
+    context = "\n\n".join(doc.page_content for doc, _ in all_docs)
+    return {"docs_with_scores": all_docs, "context": context}
 
 
 def generate(state: RAGState) -> dict:
@@ -114,11 +148,13 @@ def format_sources(state: RAGState) -> dict:
 
 graph_builder = StateGraph(RAGState)
 
+graph_builder.add_node("decompose", decompose)
 graph_builder.add_node("retrieve", retrieve)
 graph_builder.add_node("generate", generate)
 graph_builder.add_node("format_sources", format_sources)
 
-graph_builder.add_edge(START, "retrieve")
+graph_builder.add_edge(START, "decompose")
+graph_builder.add_edge("decompose", "retrieve")
 graph_builder.add_edge("retrieve", "generate")
 graph_builder.add_edge("retrieve", "format_sources")
 graph_builder.add_edge("generate", END)
