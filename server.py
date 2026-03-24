@@ -5,10 +5,11 @@ import time
 import uuid
 import argparse
 
-#from rag_qa import query_answer
 from agent_qa import query_answer
-#from rag_load import upload_file, upload_folder, upload_path, clean_project
 from agent_load import upload_file, upload_folder, upload_path, clean_project
+
+#from agent_falkor_qa import query_answer
+#from agent_falkor_load import upload_file, upload_folder, upload_path, clean_project
 
 load_dotenv(".env")
 
@@ -46,6 +47,7 @@ class ChatCompletionResponse(BaseModel):
     id: str
     object: str
     created: int
+    yes_no: str
     choices: list[Choice]
     usage: Usage
     sources: list[Source] = []
@@ -61,7 +63,7 @@ async def chat_completions(request: ChatCompletionRequest):
     question = user_messages[-1].content
 
     try:
-        answer, sources = query_answer(question, request.project, request.strip_markdown)
+        yes_no, answer, sources = query_answer(question, request.project, request.strip_markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -72,6 +74,7 @@ async def chat_completions(request: ChatCompletionRequest):
         id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
         object="chat.completion",
         created=int(time.time()),
+        yes_no=yes_no,
         choices=[
             Choice(
                 index=0,

@@ -1,8 +1,10 @@
 from typing import Any, TypedDict
 
 from langchain_ollama import OllamaEmbeddings, OllamaLLM
-from langchain_neo4j import Neo4jVector
-from neo4j_graphrag.types import SearchType
+from langchain_falkordb.vectorstores import (
+    FalkorDBVector, SearchType, _get_search_index_query,
+)
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, START, END
@@ -13,6 +15,67 @@ from functools import lru_cache
 
 load_dotenv(".env")
 
+
+# --- Monkey-patch: fix langchain-falkordb bug con ID non-integer ---
+# similarity_search_with_score_by_vector fa int(id) sugli ID metadata,
+# ma gli ID generati da from_texts() sono stringhe hex (es. "c0cb551b...").
+# Questo patch wrappa il metodo originale e, in caso di ValueError,
+# ricostruisce i Document senza forzare int().
+
+_orig_search_by_vector = FalkorDBVector.similarity_search_with_score_by_vector
+
+
+def _patched_search_by_vector(self, embedding, k=4, **kwargs):  # type: ignore
+    try:
+        return _orig_search_by_vector(self, embedding, k=k, **kwargs)
+    except ValueError as e:
+        if "invalid literal for int()" not in str(e):
+            raise
+
+    # Riesegui la query e costruisci i Document senza int(id)
+    filter_params = kwargs.get("filter", {}) or {}
+    params = kwargs.get("params", {})
+    query_text = kwargs.get("query", "")
+
+    index_query = _get_search_index_query(self.search_type, self._index_type)
+    retrieval_query = self.retrieval_query if self.retrieval_query else (
+        f"RETURN node.{self.text_node_property} AS text, score, "
+        f"{{text: node.{self.text_node_property}, "
+        f"id: node.id, source: node.source}} AS metadata"
+    )
+    read_query = index_query + retrieval_query
+    parameters = {
+        "entity_property": self.embedding_node_property,
+        "k": k,
+        "embedding": embedding,
+        "query": query_text,
+        "entity_label": self.node_label,
+        **params,
+        **filter_params,
+    }
+    results = self._query(read_query, params=parameters)
+    if not results:
+        return []
+
+    docs = []
+    for result in results:
+        metadata = {
+            mk: mv for mk, mv in result[2].items()
+            if mk != "text" and mv is not None
+        }
+        docs.append((
+            Document(
+                page_content=result[0],
+                metadata=metadata,
+                id=result[2].get("id"),
+            ),
+            result[1],
+        ))
+    return docs
+
+
+FalkorDBVector.similarity_search_with_score_by_vector = _patched_search_by_vector  # type: ignore[assignment]
+
 # --- Config ---
 
 embeddings = OllamaEmbeddings(
@@ -20,9 +83,10 @@ embeddings = OllamaEmbeddings(
     model=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
 )
 
-neo4j_url = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-neo4j_user = os.getenv("NEO4J_USERNAME", "neo4j")
-neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+falkordb_host = os.getenv("FALKORDB_HOST", "localhost")
+falkordb_port = int(os.getenv("FALKORDB_PORT", "6379"))
+falkordb_username = os.getenv("FALKORDB_USERNAME", None)
+falkordb_password = os.getenv("FALKORDB_PASSWORD", None)
 
 llm = OllamaLLM(
     base_url=os.getenv("BASE_URL", "http://localhost:11434"),
@@ -30,7 +94,7 @@ llm = OllamaLLM(
     temperature=0.0,
 )
 
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
+SIMILARITY_THRESHOLD = float(os.getenv("FALKORDB_SIMILARITY_THRESHOLD", "0.40"))
 RETRIEVE_K = int(os.getenv("RETRIEVE_K", "3"))
 
 decompose_prompt = ChatPromptTemplate.from_template(
@@ -67,16 +131,21 @@ sub_answer_chain = sub_answer_prompt | llm | StrOutputParser()
 
 
 @lru_cache(maxsize=16)
-def get_vector_store(proj: str) -> Neo4jVector:
-    return Neo4jVector(
+def get_vector_store(proj: str) -> FalkorDBVector:
+    node_label = f"Document_{proj}"
+    return FalkorDBVector.from_existing_index(
         embedding=embeddings,
-        url=neo4j_url,
-        username=neo4j_user,
-        password=neo4j_password,
-        index_name=f"{proj}_docs",
-        node_label=f"Document_{proj}",
-        keyword_index_name=f"{proj}_docs_fulltext",
+        host=falkordb_host,
+        port=falkordb_port,
+        username=falkordb_username,
+        password=falkordb_password,
+        database=f"{proj}_docs",
+        node_label=node_label,
         search_type=SearchType.HYBRID,
+        retrieval_query=(
+            f"RETURN node.text AS text, score, "
+            f"{{text: node.text, id: node.id, source: node.source, page: node.page}} AS metadata"
+        ),
     )
 
 

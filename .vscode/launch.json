@@ -9,11 +9,25 @@
             "name": "Load documents",
             "type": "debugpy",
             "request": "launch",
-            "program": "rag_load.py",
+            "program": "agent_falkor_load.py",
             "console": "integratedTerminal",
             "args": [
+//                "--folder", "../EvalRAG/documents/DTR08",
+//                "--project", "DTR08"
                 "--folder", "../EvalRAG/documents/Company",
                 "--project", "Company"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Query document",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "agent_falkor_qa.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--question", "Is there an explanation relating to any new features?",
+                "--project", "DTR08"
             ],
             "justMyCode": false
         },

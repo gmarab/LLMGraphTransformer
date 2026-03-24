@@ -4,9 +4,9 @@ from typing import Any, TypedDict
 import pypdf
 import docx
 import tiktoken
+import falkordb
 from langchain_ollama import OllamaEmbeddings
-from langchain_neo4j import Neo4jVector
-from neo4j import GraphDatabase
+from langchain_falkordb.vectorstores import FalkorDBVector, SearchType
 from langgraph.graph import StateGraph, START, END
 from dotenv import load_dotenv
 import os
@@ -23,9 +23,10 @@ embeddings = OllamaEmbeddings(
     model=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
 )
 
-neo4j_url = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-neo4j_user = os.getenv("NEO4J_USERNAME", "neo4j")
-neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+falkordb_host = os.getenv("FALKORDB_HOST", "localhost")
+falkordb_port = int(os.getenv("FALKORDB_PORT", "6379"))
+falkordb_username = os.getenv("FALKORDB_USERNAME", None)
+falkordb_password = os.getenv("FALKORDB_PASSWORD", None)
 
 enc = tiktoken.get_encoding("o200k_harmony")
 
@@ -139,40 +140,41 @@ def clean_project_node(state: LoadState) -> dict:
 
         project = state["project"]
         node_label = f"Document_{project}"
-        index_name = f"{project}_docs"
-        keyword_index_name = f"{project}_docs_fulltext"
+        graph_name = f"{project}_docs"
 
-        driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_password))
-        with driver.session() as session:
-            result = session.run(f"MATCH (n:{node_label}) DETACH DELETE n RETURN count(n) AS deleted")
-            deleted = result.single()["deleted"]
-            session.run(f"DROP INDEX {index_name} IF EXISTS")
-            session.run(f"DROP INDEX {keyword_index_name} IF EXISTS")
-        driver.close()
+        db = falkordb.FalkorDB(
+            host=falkordb_host,
+            port=falkordb_port,
+            username=falkordb_username,
+            password=falkordb_password,
+        )
+        graph = db.select_graph(graph_name)
+        result = graph.query(f"MATCH (n:{node_label}) WITH n, count(n) AS cnt DETACH DELETE n RETURN cnt")
+        deleted = result.result_set[0][0] if result.result_set else 0
+        db.close()
         return {"deleted": deleted}
     except Exception as e:
         raise type(e)(f"[clean_project] {e}") from e
 
 
 def store_vectors(state: LoadState) -> dict:
-    """Carica i chunk nel vector store Neo4j."""
+    """Carica i chunk nel vector store FalkorDB."""
     try:
         project = state["project"]
         node_label = f"Document_{project}"
-        index_name = f"{project}_docs"
-        keyword_index_name = f"{project}_docs_fulltext"
+        graph_name = f"{project}_docs"
 
-        Neo4jVector.from_texts(
+        FalkorDBVector.from_texts(
             texts=state["chunks"],
             metadatas=state["metadatas"],
             embedding=embeddings,
-            url=neo4j_url,
-            username=neo4j_user,
-            password=neo4j_password,
-            index_name=index_name,
+            host=falkordb_host,
+            port=falkordb_port,
+            username=falkordb_username,
+            password=falkordb_password,
+            database=graph_name,
             node_label=node_label,
-            keyword_index_name=keyword_index_name,
-            search_type="hybrid",
+            search_type=SearchType.HYBRID,
         )
 
         return {
@@ -211,15 +213,18 @@ app = graph
 def _clean_project(project: str) -> int:
     """Elimina nodi e indici precedenti per il progetto."""
     node_label = f"Document_{project}"
-    index_name = f"{project}_docs"
-    keyword_index_name = f"{project}_docs_fulltext"
-    driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_password))
-    with driver.session() as session:
-        result = session.run(f"MATCH (n:{node_label}) DETACH DELETE n RETURN count(n) AS deleted")
-        deleted = result.single()["deleted"]
-        session.run(f"DROP INDEX {index_name} IF EXISTS")
-        session.run(f"DROP INDEX {keyword_index_name} IF EXISTS")
-    driver.close()
+    graph_name = f"{project}_docs"
+
+    db = falkordb.FalkorDB(
+        host=falkordb_host,
+        port=falkordb_port,
+        username=falkordb_username,
+        password=falkordb_password,
+    )
+    graph = db.select_graph(graph_name)
+    result = graph.query(f"MATCH (n:{node_label}) WITH n, count(n) AS cnt DETACH DELETE n RETURN cnt")
+    deleted = result.result_set[0][0] if result.result_set else 0
+    db.close()
     return deleted
 
 
@@ -252,7 +257,7 @@ def upload_path(filepath: str, project: str, clean: bool = False) -> dict:
 
 
 def upload_folder(folder: str, project: str, clean: bool = False) -> dict:
-    """Processa tutti i file supportati in una cartella e li carica in Neo4j."""
+    """Processa tutti i file supportati in una cartella e li carica in FalkorDB."""
     if not os.path.isdir(folder):
         raise ValueError(f"Cartella non trovata: {folder}")
 
@@ -296,9 +301,9 @@ def upload_folder(folder: str, project: str, clean: bool = False) -> dict:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="RAG Document Loader (LangGraph)")
+    parser = argparse.ArgumentParser(description="RAG Document Loader (LangGraph + FalkorDB)")
     parser.add_argument("--folder", help="Path to folder to load", required=True)
-    parser.add_argument("--project", help="Project name for Neo4j", required=True)
+    parser.add_argument("--project", help="Project name for FalkorDB", required=True)
     parser.add_argument("--clean", default=True, help="Clean previous project's documents")
     return parser.parse_args()
 
